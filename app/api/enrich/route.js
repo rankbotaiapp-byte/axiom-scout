@@ -20,7 +20,7 @@ export async function POST(req) {
         city: body.city || "",
         niche: body.nicheLabel || body.nicheId || "",
       }),
-      { maxTokens: 5000, maxSearch: 6, maxFetch: 6 }
+      { maxTokens: 2200, maxSearch: 2, maxFetch: 2, model: process.env.ANTHROPIC_SEARCH_MODEL || "claude-haiku-4-5" }
     );
 
     const prospect = result.json;

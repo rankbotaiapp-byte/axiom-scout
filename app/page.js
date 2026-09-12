@@ -20,15 +20,19 @@ function scoreClass(p) {
   return "maybe";
 }
 
-async function readJson(res) {
+async function readJson(res, kind = "search") {
   const text = await res.text();
   try {
     return { ok: res.ok, status: res.status, data: JSON.parse(text) };
   } catch {
     if (res.status === 504 || /error occurred/i.test(text) || /timeout/i.test(text)) {
-      throw new Error("That area timed out. Scout keeps going through the other towns.");
+      throw new Error(
+        kind === "enrich"
+          ? "Full scrape timed out. Listing packet is ready — copy it, or click the shop again."
+          : "That town timed out. Shops already found stay in the library."
+      );
     }
-    throw new Error(`Search failed (${res.status}). Try Sweep again.`);
+    throw new Error(kind === "enrich" ? "Click the shop again." : `Search failed (${res.status}).`);
   }
 }
 
@@ -240,11 +244,22 @@ export default function Page() {
     setSelected(p);
     setError("");
     const cached = loadDossier(dossierKey(p));
-    if (cached?.dossier) {
+    if (cached?.dossier && !cached.dossier.shallow) {
       setDossier(cached.dossier);
       return;
     }
     setEnriching(true);
+    try {
+      const stubRes = await fetch("/api/packet", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ prospect: p, city: p.city || city, nicheId, nicheLabel }),
+      });
+      const stub = await readJson(stubRes, "enrich");
+      if (stub.ok) setDossier(stub.data);
+    } catch {
+      /* listing packet is best-effort */
+    }
     try {
       const res = await fetch("/api/enrich", {
         method: "POST",
@@ -257,7 +272,7 @@ export default function Page() {
           nicheLabel,
         }),
       });
-      const { ok, data } = await readJson(res);
+      const { ok, data } = await readJson(res, "enrich");
       if (!ok) throw new Error(data.error || "Enrich failed");
       setDossier(data);
       saveDossier(dossierKey(p), data);
@@ -436,10 +451,14 @@ export default function Page() {
 
         <div className="card dossier">
           {!selected && <div className="empty">Click a business to pull services, hours, photos, AI verdict, business.ts, and the owner email.</div>}
-          {selected && enriching && <div className="empty">Fetching site + listings for {selected.businessName}…</div>}
-          {dossier && !enriching && (
+          {selected && enriching && !dossier && <div className="empty">Fetching site + listings for {selected.businessName}…</div>}
+          {dossier && (
             <>
               <h2>{dossier.prospect.businessName}</h2>
+              {enriching ? <div className="banner progress">Scraping the live site for hours and prices…</div> : null}
+              {dossier.shallow && !enriching ? (
+                <div className="banner maybe">Listing packet — hours/prices may be thin. Click the shop again for a full scrape.</div>
+              ) : null}
               <div className={`banner ${scoreClass(dossier.prospect)}`}>
                 {scoreClass(dossier.prospect) === "prime" ? "PRIME — build a demo" : scoreClass(dossier.prospect) === "skip" ? "SKIP — already has AI" : "MAYBE — thin data or mixed signals"}
                 {dossier.prospect.candidate?.why ? ` · ${dossier.prospect.candidate.why}` : ""}
