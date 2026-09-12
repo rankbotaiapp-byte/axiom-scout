@@ -189,3 +189,4 @@ pre {
 .chip.on.prime, .chip.prime.on { background: rgba(94,234,212,0.12); }
 .chip.on.maybe, .chip.maybe.on { background: rgba(245,185,66,0.12); }
 .chip.on.skip, .chip.skip.on { background: rgba(240,113,103,0.12); }
+.banner.saved { color: var(--prime); background: rgba(94,234,212,0.1); border: 1px solid rgba(94,234,212,0.35); }

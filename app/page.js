@@ -1,6 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  packKey,
+  dossierKey,
+  savePack,
+  loadPack,
+  saveDossier,
+  loadDossier,
+  listPacks,
+  exportAll,
+  importAll,
+} from "../lib/store";
 
 function scoreClass(p) {
   const v = p.candidate?.verdict || (p.alreadyHasAi ? "skip" : p.candidate?.score >= 70 ? "prime" : "maybe");
@@ -82,6 +93,25 @@ export default function Page() {
   const [selected, setSelected] = useState(null);
   const [dossier, setDossier] = useState(null);
   const [cityFilter, setCityFilter] = useState("all");
+  const [savedAt, setSavedAt] = useState(null);
+  const [library, setLibrary] = useState([]);
+  const fileRef = useRef(null);
+
+
+  useEffect(() => {
+    const key = packKey(nicheId, regionId, city);
+    const row = loadPack(key);
+    if (row?.pack) {
+      setPack(row.pack);
+      setSavedAt(row.savedAt);
+    } else {
+      setPack(null);
+      setSavedAt(null);
+    }
+    setDossier(null);
+    setSelected(null);
+    setLibrary(listPacks());
+  }, [nicheId, regionId]);
 
   useEffect(() => {
     fetch("/api/niches")
@@ -137,6 +167,8 @@ export default function Page() {
         const { ok, data } = await readJson(res);
         if (!ok) throw new Error(data.error || "Search failed");
         setPack(data);
+        setSavedAt(savePack(packKey(nicheId, regionId, city), data));
+        setLibrary(listPacks());
         return;
       }
       const area = region;
@@ -179,6 +211,8 @@ export default function Page() {
             model: data.model || packAcc.model,
           };
           setPack({ ...packAcc });
+          setSavedAt(savePack(packKey(nicheId, regionId, city), packAcc));
+          setLibrary(listPacks());
         } catch (e) {
           packAcc = {
             ...packAcc,
@@ -186,6 +220,10 @@ export default function Page() {
           };
           setPack({ ...packAcc });
         }
+      }
+      if (packAcc.prospects.length) {
+        setSavedAt(savePack(packKey(nicheId, regionId, city), packAcc));
+        setLibrary(listPacks());
       }
       if (!packAcc.prospects.length && packAcc.errors.length) {
         throw new Error(packAcc.errors.join(" · "));
@@ -200,8 +238,13 @@ export default function Page() {
 
   async function enrich(p) {
     setSelected(p);
-    setEnriching(true);
     setError("");
+    const cached = loadDossier(dossierKey(p));
+    if (cached?.dossier) {
+      setDossier(cached.dossier);
+      return;
+    }
+    setEnriching(true);
     try {
       const res = await fetch("/api/enrich", {
         method: "POST",
@@ -217,6 +260,7 @@ export default function Page() {
       const { ok, data } = await readJson(res);
       if (!ok) throw new Error(data.error || "Enrich failed");
       setDossier(data);
+      saveDossier(dossierKey(p), data);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -226,6 +270,28 @@ export default function Page() {
 
   async function copy(text) {
     await navigator.clipboard.writeText(text);
+  }
+
+  function downloadLibrary() {
+    const blob = new Blob([exportAll()], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `axiom-scout-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
+  async function onImport(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    importAll(await file.text());
+    const row = loadPack(packKey(nicheId, regionId, city));
+    if (row?.pack) {
+      setPack(row.pack);
+      setSavedAt(row.savedAt);
+    }
+    setLibrary(listPacks());
+    e.target.value = "";
   }
 
   const images = dossier?.prospect?.serviceImages || [];
@@ -274,12 +340,31 @@ export default function Page() {
             </div>
           ) : null}
           <button className="go" onClick={search} disabled={loading}>
-            {loading ? (progress || "Sweeping…") : customCity ? "Search city" : "Sweep all shops"}
+            {loading ? (progress || "Sweeping…") : pack?.prospects?.length ? "Refresh sweep" : customCity ? "Search city" : "Sweep all shops"}
           </button>
         </div>
         {!customCity && region ? (
           <div className="meta">
             Covers {region.towns?.join(" · ")}
+          </div>
+        ) : null}
+        {savedAt ? (
+          <div className="banner saved">
+            Saved {new Date(savedAt).toLocaleString()} · {pack?.prospects?.length || 0} shops in this browser. Click a shop — no need to sweep again.
+          </div>
+        ) : null}
+        <div className="actions" style={{ marginTop: 10 }}>
+          <button className="ghost" onClick={downloadLibrary} type="button">Download library</button>
+          <button className="ghost" type="button" onClick={() => fileRef.current?.click()}>Import JSON</button>
+          <input ref={fileRef} type="file" accept="application/json" hidden onChange={onImport} />
+        </div>
+        {library.length ? (
+          <div className="chips">
+            {library.map((row) => (
+              <span className="chip book" key={row.key}>
+                {row.nicheLabel || row.nicheId} · {row.regionLabel || "area"} · {row.count}
+              </span>
+            ))}
           </div>
         ) : null}
         <div className="legend">
