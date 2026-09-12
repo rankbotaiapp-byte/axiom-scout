@@ -1,0 +1,6 @@
+{
+  "functions": {
+    "app/api/search/route.js": { "maxDuration": 60 },
+    "app/api/enrich/route.js": { "maxDuration": 60 }
+  }
+}

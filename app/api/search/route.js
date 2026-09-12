@@ -115,8 +115,25 @@ export async function POST(req) {
     const regionId = body.regionId || "";
     const region = regionId ? getRegion(regionId) : null;
 
+    const clusterId = body.clusterId || "";
     if (region) {
-      const swept = await sweepRegion(niche, region);
+      const cluster = region.clusters.find((c) => c.id === clusterId) || null;
+      if (!cluster) {
+        return Response.json(
+          { error: "Pick one area cluster (Grants Pass, Illinois Valley, Medford, or Ashland)." },
+          { status: 400 }
+        );
+      }
+      const result = await runScout(
+        SEARCH_SYSTEM,
+        countySweepPrompt({ niche, cluster, limit: 20 }),
+        { maxTokens: 3500, maxSearch: 3, maxFetch: 2 }
+      );
+      const found = Array.isArray(result.json.prospects) ? result.json.prospects : [];
+      for (const p of found) {
+        if (!p.county) p.county = cluster.county;
+        if (!p.clusterId) p.clusterId = cluster.id;
+      }
       return Response.json({
         ok: true,
         mode: "county",
@@ -125,12 +142,10 @@ export async function POST(req) {
         regionId: region.id,
         regionLabel: region.label,
         counties: region.counties,
-        towns: swept.towns,
-        clusters: swept.clusters,
-        prospects: swept.prospects,
-        errors: swept.errors,
-        usage: swept.usage,
-        model: swept.model,
+        cluster: { id: cluster.id, label: cluster.label, county: cluster.county },
+        prospects: sortProspects(dedupe(found)),
+        usage: result.usage,
+        model: result.model,
       });
     }
 
@@ -141,7 +156,7 @@ export async function POST(req) {
     const result = await runScout(
       SEARCH_SYSTEM,
       searchUserPrompt({ niche, city, limit }),
-      { maxTokens: 5000, maxSearch: 6, maxFetch: 2 }
+      { maxTokens: 3500, maxSearch: 3, maxFetch: 2 }
     );
     const prospects = sortProspects(
       dedupe(Array.isArray(result.json.prospects) ? result.json.prospects : [])

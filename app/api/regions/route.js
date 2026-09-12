@@ -8,6 +8,12 @@ export async function GET() {
       label: r.label,
       counties: r.counties,
       towns: r.clusters.flatMap((c) => c.towns),
+      clusters: r.clusters.map((c) => ({
+        id: c.id,
+        label: c.label,
+        county: c.county,
+        towns: c.towns,
+      })),
     })),
   });
 }

@@ -9,6 +9,40 @@ function scoreClass(p) {
   return "maybe";
 }
 
+async function readJson(res) {
+  const text = await res.text();
+  try {
+    return { ok: res.ok, status: res.status, data: JSON.parse(text) };
+  } catch {
+    if (res.status === 504 || /error occurred/i.test(text) || /timeout/i.test(text)) {
+      throw new Error("That area timed out. Scout keeps going through the other towns.");
+    }
+    throw new Error(`Search failed (${res.status}). Try Sweep again.`);
+  }
+}
+
+function prospectKey(p) {
+  const site = String(p.website || "")
+    .toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .replace(/^www\./, "")
+    .split("/")[0];
+  if (site && site.length > 4) return `web:${site}`;
+  return `name:${String(p.businessName || "").toLowerCase()}|${String(p.city || "").toLowerCase()}`;
+}
+
+function mergeProspects(a, b) {
+  const seen = new Set((a || []).map(prospectKey));
+  const out = [...(a || [])];
+  for (const p of b || []) {
+    const k = prospectKey(p);
+    if (!p?.businessName || seen.has(k)) continue;
+    seen.add(k);
+    out.push(p);
+  }
+  return out;
+}
+
 function groupByCity(list) {
   const map = new Map();
   for (const p of list || []) {
@@ -26,6 +60,7 @@ export default function Page() {
   const [regionId, setRegionId] = useState("jackson-josephine");
   const [city, setCity] = useState("");
   const [loading, setLoading] = useState(false);
+  const [progress, setProgress] = useState("");
   const [enriching, setEnriching] = useState(false);
   const [error, setError] = useState("");
   const [pack, setPack] = useState(null);
@@ -74,22 +109,70 @@ export default function Page() {
     setSelected(null);
     setCityFilter("all");
     setLoading(true);
+    setProgress("");
     try {
-      const payload = customCity
-        ? { nicheId, city, limit: 30 }
-        : { nicheId, regionId };
-      const res = await fetch("/api/search", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Search failed");
-      setPack(data);
+      if (customCity) {
+        setProgress("Searching city…");
+        const res = await fetch("/api/search", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ nicheId, city, limit: 20 }),
+        });
+        const { ok, data } = await readJson(res);
+        if (!ok) throw new Error(data.error || "Search failed");
+        setPack(data);
+        return;
+      }
+      const clusters = region?.clusters || [];
+      if (!clusters.length) throw new Error("Area list still loading — try Sweep again.");
+      let packAcc = {
+        ok: true,
+        mode: "county",
+        nicheId,
+        nicheLabel,
+        regionId,
+        regionLabel: region.label,
+        counties: region.counties,
+        prospects: [],
+        errors: [],
+        clusters: [],
+      };
+      setPack(packAcc);
+      for (let i = 0; i < clusters.length; i++) {
+        const cluster = clusters[i];
+        setProgress(`Sweeping ${cluster.label} (${i + 1}/${clusters.length})…`);
+        try {
+          const res = await fetch("/api/search", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ nicheId, regionId, clusterId: cluster.id }),
+          });
+          const { ok, data } = await readJson(res);
+          if (!ok) throw new Error(data.error || "Search failed");
+          packAcc = {
+            ...packAcc,
+            ...data,
+            prospects: mergeProspects(packAcc.prospects, data.prospects),
+            clusters: [...packAcc.clusters, { ...cluster, count: data.prospects?.length || 0 }],
+            errors: packAcc.errors,
+          };
+          setPack({ ...packAcc });
+        } catch (e) {
+          packAcc = {
+            ...packAcc,
+            errors: [...packAcc.errors, `${cluster.label}: ${e.message}`],
+          };
+          setPack({ ...packAcc });
+        }
+      }
+      if (!packAcc.prospects.length && packAcc.errors.length) {
+        throw new Error(packAcc.errors.join(" · "));
+      }
     } catch (e) {
       setError(e.message);
     } finally {
       setLoading(false);
+      setProgress("");
     }
   }
 
@@ -109,8 +192,8 @@ export default function Page() {
           nicheLabel,
         }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Enrich failed");
+      const { ok, data } = await readJson(res);
+      if (!ok) throw new Error(data.error || "Enrich failed");
       setDossier(data);
     } catch (e) {
       setError(e.message);
@@ -166,7 +249,7 @@ export default function Page() {
             </div>
           ) : null}
           <button className="go" onClick={search} disabled={loading}>
-            {loading ? "Sweeping counties…" : customCity ? "Search city" : "Sweep all shops"}
+            {loading ? (progress || "Sweeping…") : customCity ? "Search city" : "Sweep all shops"}
           </button>
         </div>
         {!customCity && region ? (
@@ -174,6 +257,7 @@ export default function Page() {
             Covers {region.towns?.join(" · ")}
           </div>
         ) : null}
+        {progress ? <div className="meta">{progress}</div> : null}
         {error ? <div className="err">{error}</div> : null}
         {pack ? (
           <div className="meta">
