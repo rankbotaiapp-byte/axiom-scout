@@ -11,6 +11,9 @@ import {
   listPacks,
   exportAll,
   importAll,
+  saveLast,
+  loadLast,
+  isPreviewHost,
 } from "../lib/store";
 
 function scoreClass(p) {
@@ -100,9 +103,19 @@ export default function Page() {
   const [savedAt, setSavedAt] = useState(null);
   const [library, setLibrary] = useState([]);
   const fileRef = useRef(null);
+  const [preview, setPreview] = useState(false);
 
 
   useEffect(() => {
+    setPreview(isPreviewHost(window.location.host));
+    const last = loadLast();
+    if (last?.nicheId) setNicheId(last.nicheId);
+    if (last?.regionId) setRegionId(last.regionId);
+    setLibrary(listPacks());
+  }, []);
+
+  useEffect(() => {
+    saveLast(nicheId, regionId);
     const key = packKey(nicheId, regionId, city);
     const row = loadPack(key);
     if (row?.pack) {
@@ -329,6 +342,11 @@ export default function Page() {
         </div>
       </div>
 
+      {preview ? (
+        <div className="banner maybe" style={{ marginBottom: 14 }}>
+          Preview link — starts empty. Open Vercel → axiom-scout → Domains → Production and bookmark that. If you still have the tab with 43 HVAC shops, Download library there, then Import JSON here. Do not sweep Barbershop unless you want a new list.
+        </div>
+      ) : null}
       <div className="card">
         <div className="search-row">
           <div>
