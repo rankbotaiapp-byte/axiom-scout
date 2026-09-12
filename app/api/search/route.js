@@ -1,5 +1,5 @@
 import { NICHES } from "../../../lib/niches";
-import { SEARCH_SYSTEM, searchUserPrompt, countySweepPrompt } from "../../../lib/prompts";
+import { SEARCH_SYSTEM, searchUserPrompt, townSearchPrompt } from "../../../lib/prompts";
 import { runScout } from "../../../lib/anthropic";
 import { getRegion, allTowns } from "../../../lib/regions";
 
@@ -115,34 +115,36 @@ export async function POST(req) {
     const regionId = body.regionId || "";
     const region = regionId ? getRegion(regionId) : null;
 
-    const clusterId = body.clusterId || "";
-    if (region) {
-      const cluster = region.clusters.find((c) => c.id === clusterId) || null;
-      if (!cluster) {
-        return Response.json(
-          { error: "Pick one area cluster (Grants Pass, Illinois Valley, Medford, or Ashland)." },
-          { status: 400 }
-        );
-      }
+    const town = (body.town || "").trim();
+    if (region && town) {
+      const cluster = region.clusters.find((c) =>
+        c.towns.some((t) => t.toLowerCase() === town.toLowerCase())
+      );
+      const county = body.county || cluster?.county || region.counties[0];
       const result = await runScout(
         SEARCH_SYSTEM,
-        countySweepPrompt({ niche, cluster, limit: 20 }),
-        { maxTokens: 3500, maxSearch: 3, maxFetch: 2 }
+        townSearchPrompt({ niche, town, county, limit: 12 }),
+        {
+          maxTokens: 1800,
+          maxSearch: 1,
+          maxFetch: 0,
+          model: process.env.ANTHROPIC_SEARCH_MODEL || "claude-haiku-4-5",
+        }
       );
       const found = Array.isArray(result.json.prospects) ? result.json.prospects : [];
       for (const p of found) {
-        if (!p.county) p.county = cluster.county;
-        if (!p.clusterId) p.clusterId = cluster.id;
+        if (!p.city) p.city = town;
+        if (!p.county) p.county = county;
       }
       return Response.json({
         ok: true,
-        mode: "county",
+        mode: "town",
         nicheId: niche.id,
         nicheLabel: niche.label,
         regionId: region.id,
         regionLabel: region.label,
-        counties: region.counties,
-        cluster: { id: cluster.id, label: cluster.label, county: cluster.county },
+        town,
+        county,
         prospects: sortProspects(dedupe(found)),
         usage: result.usage,
         model: result.model,
@@ -156,7 +158,7 @@ export async function POST(req) {
     const result = await runScout(
       SEARCH_SYSTEM,
       searchUserPrompt({ niche, city, limit }),
-      { maxTokens: 3500, maxSearch: 3, maxFetch: 2 }
+      { maxTokens: 1800, maxSearch: 1, maxFetch: 0, model: process.env.ANTHROPIC_SEARCH_MODEL || "claude-haiku-4-5" }
     );
     const prospects = sortProspects(
       dedupe(Array.isArray(result.json.prospects) ? result.json.prospects : [])

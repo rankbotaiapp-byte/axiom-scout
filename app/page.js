@@ -123,44 +123,50 @@ export default function Page() {
         setPack(data);
         return;
       }
-      const clusters = region?.clusters || [];
-      if (!clusters.length) throw new Error("Area list still loading — try Sweep again.");
+      const area = region;
+      const jobs = (area?.clusters || []).flatMap((c) =>
+        (c.towns || []).map((town) => ({ town, county: c.county, cluster: c.label }))
+      );
+      if (!jobs.length) throw new Error("Area list still loading — try Sweep again.");
       let packAcc = {
         ok: true,
         mode: "county",
         nicheId,
         nicheLabel,
-        regionId,
-        regionLabel: region.label,
-        counties: region.counties,
+        regionId: area.id,
+        regionLabel: area.label,
+        counties: area.counties,
         prospects: [],
         errors: [],
-        clusters: [],
       };
       setPack(packAcc);
-      for (let i = 0; i < clusters.length; i++) {
-        const cluster = clusters[i];
-        setProgress(`Sweeping ${cluster.label} (${i + 1}/${clusters.length})…`);
+      for (let i = 0; i < jobs.length; i++) {
+        const job = jobs[i];
+        setProgress(`Sweeping ${job.town} (${i + 1}/${jobs.length}) · ${packAcc.prospects.length} shops so far`);
         try {
           const res = await fetch("/api/search", {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ nicheId, regionId, clusterId: cluster.id }),
+            body: JSON.stringify({
+              nicheId,
+              regionId: area.id,
+              town: job.town,
+              county: job.county,
+            }),
           });
           const { ok, data } = await readJson(res);
           if (!ok) throw new Error(data.error || "Search failed");
           packAcc = {
             ...packAcc,
-            ...data,
             prospects: mergeProspects(packAcc.prospects, data.prospects),
-            clusters: [...packAcc.clusters, { ...cluster, count: data.prospects?.length || 0 }],
             errors: packAcc.errors,
+            model: data.model || packAcc.model,
           };
           setPack({ ...packAcc });
         } catch (e) {
           packAcc = {
             ...packAcc,
-            errors: [...packAcc.errors, `${cluster.label}: ${e.message}`],
+            errors: [...packAcc.errors, `${job.town}: ${e.message}`],
           };
           setPack({ ...packAcc });
         }
@@ -227,7 +233,7 @@ export default function Page() {
         <div className="search-row">
           <div>
             <label>Niche</label>
-            <select value={nicheId} onChange={(e) => setNicheId(e.target.value)}>
+            <select value={nicheId} onChange={(e) => setNicheId(e.target.value)} disabled={loading}>
               {niches.map((n) => (
                 <option key={n.id} value={n.id}>{n.label}</option>
               ))}
@@ -235,7 +241,7 @@ export default function Page() {
           </div>
           <div>
             <label>Area</label>
-            <select value={regionId} onChange={(e) => setRegionId(e.target.value)}>
+            <select value={regionId} onChange={(e) => setRegionId(e.target.value)} disabled={loading}>
               {regions.map((r) => (
                 <option key={r.id} value={r.id}>{r.label}</option>
               ))}
