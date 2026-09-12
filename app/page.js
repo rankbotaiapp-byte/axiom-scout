@@ -9,39 +9,79 @@ function scoreClass(p) {
   return "maybe";
 }
 
+function groupByCity(list) {
+  const map = new Map();
+  for (const p of list || []) {
+    const city = p.city || "Unspecified";
+    if (!map.has(city)) map.set(city, []);
+    map.get(city).push(p);
+  }
+  return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+}
+
 export default function Page() {
   const [niches, setNiches] = useState([]);
+  const [regions, setRegions] = useState([]);
   const [nicheId, setNicheId] = useState("barber");
-  const [city, setCity] = useState("Grants Pass, OR");
+  const [regionId, setRegionId] = useState("jackson-josephine");
+  const [city, setCity] = useState("");
   const [loading, setLoading] = useState(false);
   const [enriching, setEnriching] = useState(false);
   const [error, setError] = useState("");
   const [pack, setPack] = useState(null);
   const [selected, setSelected] = useState(null);
   const [dossier, setDossier] = useState(null);
+  const [cityFilter, setCityFilter] = useState("all");
 
   useEffect(() => {
     fetch("/api/niches")
       .then((r) => r.json())
       .then((d) => setNiches(d.niches || []))
       .catch(() => setNiches([]));
+    fetch("/api/regions")
+      .then((r) => r.json())
+      .then((d) => {
+        setRegions(d.regions || []);
+        if (d.defaultId) setRegionId(d.defaultId);
+      })
+      .catch(() => setRegions([]));
   }, []);
 
   const nicheLabel = useMemo(
     () => niches.find((n) => n.id === nicheId)?.label || nicheId,
     [niches, nicheId]
   );
+  const region = regions.find((r) => r.id === regionId);
+  const customCity = regionId === "custom";
+
+  const visible = useMemo(() => {
+    const list = pack?.prospects || [];
+    if (cityFilter === "all") return list;
+    if (cityFilter === "prime") return list.filter((p) => scoreClass(p) === "prime");
+    if (cityFilter === "skip") return list.filter((p) => scoreClass(p) === "skip");
+    return list.filter((p) => (p.city || "") === cityFilter);
+  }, [pack, cityFilter]);
+
+  const grouped = useMemo(() => groupByCity(visible), [visible]);
+  const cities = useMemo(() => {
+    const set = new Set((pack?.prospects || []).map((p) => p.city).filter(Boolean));
+    return [...set].sort();
+  }, [pack]);
 
   async function search() {
     setError("");
     setDossier(null);
     setSelected(null);
+    setCityFilter("all");
     setLoading(true);
     try {
+      const payload = customCity
+        ? { nicheId, city, limit: 30 }
+        : { nicheId, regionId };
       const res = await fetch("/api/search", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ nicheId, city, limit: 6 }),
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Search failed");
@@ -85,6 +125,8 @@ export default function Page() {
 
   const images = dossier?.prospect?.serviceImages || [];
   const hero = dossier?.prospect?.heroImage?.url;
+  const primeCount = (pack?.prospects || []).filter((p) => scoreClass(p) === "prime").length;
+  const skipCount = (pack?.prospects || []).filter((p) => scoreClass(p) === "skip").length;
 
   return (
     <div className="shell">
@@ -92,7 +134,9 @@ export default function Page() {
         <div className="halo" />
         <div>
           <h1>AXIOM SCOUT</h1>
-          <div className="sub">Search a booking niche. Copy business.ts into axiom-business-template. Skip if they already have an AI desk.</div>
+          <div className="sub">
+            Sweep Jackson and Josephine County. Copy business.ts into the halo template. Skip shops that already have an AI desk.
+          </div>
         </div>
       </div>
 
@@ -107,40 +151,77 @@ export default function Page() {
             </select>
           </div>
           <div>
-            <label>City</label>
-            <input value={city} onChange={(e) => setCity(e.target.value)} placeholder="Grants Pass, OR" />
+            <label>Area</label>
+            <select value={regionId} onChange={(e) => setRegionId(e.target.value)}>
+              {regions.map((r) => (
+                <option key={r.id} value={r.id}>{r.label}</option>
+              ))}
+              <option value="custom">Custom city…</option>
+            </select>
           </div>
+          {customCity ? (
+            <div>
+              <label>City</label>
+              <input value={city} onChange={(e) => setCity(e.target.value)} placeholder="Medford, OR" />
+            </div>
+          ) : null}
           <button className="go" onClick={search} disabled={loading}>
-            {loading ? "Searching…" : "Search businesses"}
+            {loading ? "Sweeping counties…" : customCity ? "Search city" : "Sweep all shops"}
           </button>
         </div>
-        {error ? <div className="err">{error}</div> : null}
-        {pack?.usage ? (
+        {!customCity && region ? (
           <div className="meta">
-            {pack.prospects?.length || 0} listings · {pack.model} · in {pack.usage.input_tokens} / out {pack.usage.output_tokens}
+            Covers {region.towns?.join(" · ")}
           </div>
         ) : null}
+        {error ? <div className="err">{error}</div> : null}
+        {pack ? (
+          <div className="meta">
+            {pack.prospects?.length || 0} shops
+            {pack.regionLabel ? ` in ${pack.regionLabel}` : pack.city ? ` in ${pack.city}` : ""}
+            {primeCount ? ` · ${primeCount} prime` : ""}
+            {skipCount ? ` · ${skipCount} already have AI` : ""}
+            {pack.model ? ` · ${pack.model}` : ""}
+            {pack.usage ? ` · in ${pack.usage.input_tokens} / out ${pack.usage.output_tokens}` : ""}
+          </div>
+        ) : null}
+        {pack?.errors?.length ? <div className="err">{pack.errors.join(" · ")}</div> : null}
       </div>
 
       <div className="grid">
         <div className="card list">
           {!pack ? (
-            <div className="empty">Pick a niche and city, then search. Results stay on this machine until you copy them.</div>
+            <div className="empty">Pick a niche. Default area is Jackson + Josephine County — Grants Pass, Medford, Ashland, Cave Junction, and every town in between.</div>
           ) : (
-            (pack.prospects || []).map((p, i) => (
-              <button
-                key={i}
-                className={`row ${selected?.businessName === p.businessName ? "active" : ""}`}
-                onClick={() => enrich(p)}
-              >
-                <span className={`score ${scoreClass(p)}`}>
-                  {p.candidate?.score ?? "—"} {p.alreadyHasAi ? "AI" : ""}
-                </span>
-                <h3>{p.businessName}</h3>
-                <p>{[p.city, p.phone, p.website].filter(Boolean).join(" · ")}</p>
-                <p>{p.candidate?.why || p.oneLiner}</p>
-              </button>
-            ))
+            <>
+              <div className="chips" style={{ marginTop: 0 }}>
+                <button className={`chip ${cityFilter === "all" ? "on" : ""}`} onClick={() => setCityFilter("all")}>All</button>
+                <button className={`chip ${cityFilter === "prime" ? "on" : ""}`} onClick={() => setCityFilter("prime")}>Prime</button>
+                <button className={`chip ${cityFilter === "skip" ? "on" : ""}`} onClick={() => setCityFilter("skip")}>Already AI</button>
+                {cities.map((c) => (
+                  <button key={c} className={`chip ${cityFilter === c ? "on" : ""}`} onClick={() => setCityFilter(c)}>{c}</button>
+                ))}
+              </div>
+              {grouped.map(([town, rows]) => (
+                <div key={town}>
+                  <div className="city-head">{town} · {rows.length}</div>
+                  {rows.map((p, i) => (
+                    <button
+                      key={`${town}-${i}`}
+                      className={`row ${selected?.businessName === p.businessName ? "active" : ""}`}
+                      onClick={() => enrich(p)}
+                    >
+                      <span className={`score ${scoreClass(p)}`}>
+                        {p.candidate?.score ?? "—"} {p.alreadyHasAi ? "AI" : ""}
+                      </span>
+                      <h3>{p.businessName}</h3>
+                      <p>{[p.county ? `${p.county} Co` : null, p.phone, p.website].filter(Boolean).join(" · ")}</p>
+                      <p>{p.candidate?.why || p.oneLiner}</p>
+                    </button>
+                  ))}
+                </div>
+              ))}
+            </>
           )}
         </div>
 

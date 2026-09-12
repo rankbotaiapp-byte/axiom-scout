@@ -9,7 +9,7 @@ Not a client site. Not for the shop owner.
 1. Import this repo on Vercel.
 2. In Claude Console → **API keys** → Create key.
 3. Add that key as `ANTHROPIC_API_KEY` on the Vercel project (Production + Preview). Do not paste keys into chat.
-4. Open the Scout URL. Niche → city → **Search businesses**.
+4. Open the Scout URL. Niche defaults to the area you live: **Jackson + Josephine County, OR** (Grants Pass, Medford, Ashland, Cave Junction, and the towns between). **Sweep all shops**.
 5. Click a shop. Wait for enrich.
 6. If verdict is **skip**, stop. They already have an AI desk.
 7. **Copy business.ts**. In a new repo from axiom-business-template, paste over `src/config/business.ts`. Drop photos into `public/business/`. Deploy that clone. That is the demo you walk in with.
