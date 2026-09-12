@@ -275,7 +275,7 @@ export default function Page() {
             {pack.usage ? ` · in ${pack.usage.input_tokens} / out ${pack.usage.output_tokens}` : ""}
           </div>
         ) : null}
-        {pack?.errors?.length ? <div className="err">{pack.errors.join(" · ")}</div> : null}
+        {pack?.errors?.length ? <div className="err">{pack.errors.length} towns missed · {pack.errors[pack.errors.length - 1]}</div> : null}
       </div>
 
       <div className="grid">
