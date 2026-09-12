@@ -43,14 +43,29 @@ function mergeProspects(a, b) {
   return out;
 }
 
-function groupByCity(list) {
-  const map = new Map();
+function countyOf(p) {
+  const c = String(p.county || "").toLowerCase();
+  if (c.includes("joseph")) return "Josephine";
+  if (c.includes("jackson")) return "Jackson";
+  return "Other";
+}
+
+function groupByCounty(list) {
+  const counties = new Map();
   for (const p of list || []) {
+    const co = countyOf(p);
+    if (!counties.has(co)) counties.set(co, new Map());
+    const cities = counties.get(co);
     const city = p.city || "Unspecified";
-    if (!map.has(city)) map.set(city, []);
-    map.get(city).push(p);
+    if (!cities.has(city)) cities.set(city, []);
+    cities.get(city).push(p);
   }
-  return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  return ["Josephine", "Jackson", "Other"]
+    .filter((co) => counties.has(co))
+    .map((co) => ({
+      county: co,
+      cities: [...counties.get(co).entries()].sort((a, b) => a[0].localeCompare(b[0])),
+    }));
 }
 
 export default function Page() {
@@ -93,11 +108,12 @@ export default function Page() {
     const list = pack?.prospects || [];
     if (cityFilter === "all") return list;
     if (cityFilter === "prime") return list.filter((p) => scoreClass(p) === "prime");
+    if (cityFilter === "maybe") return list.filter((p) => scoreClass(p) === "maybe");
     if (cityFilter === "skip") return list.filter((p) => scoreClass(p) === "skip");
     return list.filter((p) => (p.city || "") === cityFilter);
   }, [pack, cityFilter]);
 
-  const grouped = useMemo(() => groupByCity(visible), [visible]);
+  const grouped = useMemo(() => groupByCounty(visible), [visible]);
   const cities = useMemo(() => {
     const set = new Set((pack?.prospects || []).map((p) => p.city).filter(Boolean));
     return [...set].sort();
@@ -215,7 +231,10 @@ export default function Page() {
   const images = dossier?.prospect?.serviceImages || [];
   const hero = dossier?.prospect?.heroImage?.url;
   const primeCount = (pack?.prospects || []).filter((p) => scoreClass(p) === "prime").length;
+  const maybeCount = (pack?.prospects || []).filter((p) => scoreClass(p) === "maybe").length;
   const skipCount = (pack?.prospects || []).filter((p) => scoreClass(p) === "skip").length;
+  const josephineCount = (pack?.prospects || []).filter((p) => countyOf(p) === "Josephine").length;
+  const jacksonCount = (pack?.prospects || []).filter((p) => countyOf(p) === "Jackson").length;
 
   return (
     <div className="shell">
@@ -263,19 +282,28 @@ export default function Page() {
             Covers {region.towns?.join(" · ")}
           </div>
         ) : null}
-        {progress ? <div className="meta">{progress}</div> : null}
-        {error ? <div className="err">{error}</div> : null}
+        <div className="legend">
+          <span className="key prime">Teal · Prime (build this)</span>
+          <span className="key maybe">Gold · Maybe</span>
+          <span className="key skip">Coral · Already has AI (skip)</span>
+          <span className="key josephine">Mint · Josephine Co</span>
+          <span className="key jackson">Blue · Jackson Co</span>
+        </div>
+        {progress ? <div className="banner progress">{progress}</div> : null}
+        {error ? <div className="banner err">{error}</div> : null}
         {pack ? (
-          <div className="meta">
-            {pack.prospects?.length || 0} shops
-            {pack.regionLabel ? ` in ${pack.regionLabel}` : pack.city ? ` in ${pack.city}` : ""}
-            {primeCount ? ` · ${primeCount} prime` : ""}
-            {skipCount ? ` · ${skipCount} already have AI` : ""}
-            {pack.model ? ` · ${pack.model}` : ""}
-            {pack.usage ? ` · in ${pack.usage.input_tokens} / out ${pack.usage.output_tokens}` : ""}
+          <div className="stats">
+            <span className="stat">{pack.prospects?.length || 0} shops</span>
+            {josephineCount ? <span className="stat josephine">{josephineCount} Josephine</span> : null}
+            {jacksonCount ? <span className="stat jackson">{jacksonCount} Jackson</span> : null}
+            {primeCount ? <span className="stat prime">{primeCount} prime</span> : null}
+            {maybeCount ? <span className="stat maybe">{maybeCount} maybe</span> : null}
+            {skipCount ? <span className="stat skip">{skipCount} skip</span> : null}
           </div>
         ) : null}
-        {pack?.errors?.length ? <div className="err">{pack.errors.length} towns missed · {pack.errors[pack.errors.length - 1]}</div> : null}
+        {pack?.errors?.length ? (
+          <div className="banner err">{pack.errors.length} towns missed · {pack.errors[pack.errors.length - 1]}</div>
+        ) : null}
       </div>
 
       <div className="grid">
@@ -286,28 +314,34 @@ export default function Page() {
             <>
               <div className="chips" style={{ marginTop: 0 }}>
                 <button className={`chip ${cityFilter === "all" ? "on" : ""}`} onClick={() => setCityFilter("all")}>All</button>
-                <button className={`chip ${cityFilter === "prime" ? "on" : ""}`} onClick={() => setCityFilter("prime")}>Prime</button>
-                <button className={`chip ${cityFilter === "skip" ? "on" : ""}`} onClick={() => setCityFilter("skip")}>Already AI</button>
+                <button className={`chip prime ${cityFilter === "prime" ? "on" : ""}`} onClick={() => setCityFilter("prime")}>Prime</button>
+                <button className={`chip maybe ${cityFilter === "maybe" ? "on" : ""}`} onClick={() => setCityFilter("maybe")}>Maybe</button>
+                <button className={`chip skip ${cityFilter === "skip" ? "on" : ""}`} onClick={() => setCityFilter("skip")}>Already AI</button>
                 {cities.map((c) => (
                   <button key={c} className={`chip ${cityFilter === c ? "on" : ""}`} onClick={() => setCityFilter(c)}>{c}</button>
                 ))}
               </div>
-              {grouped.map(([town, rows]) => (
-                <div key={town}>
-                  <div className="city-head">{town} · {rows.length}</div>
-                  {rows.map((p, i) => (
-                    <button
-                      key={`${town}-${i}`}
-                      className={`row ${selected?.businessName === p.businessName ? "active" : ""}`}
-                      onClick={() => enrich(p)}
-                    >
-                      <span className={`score ${scoreClass(p)}`}>
-                        {p.candidate?.score ?? "—"} {p.alreadyHasAi ? "AI" : ""}
-                      </span>
-                      <h3>{p.businessName}</h3>
-                      <p>{[p.county ? `${p.county} Co` : null, p.phone, p.website].filter(Boolean).join(" · ")}</p>
-                      <p>{p.candidate?.why || p.oneLiner}</p>
-                    </button>
+              {grouped.map((block) => (
+                <div key={block.county} className={`county-block ${block.county.toLowerCase()}`}>
+                  <div className={`county-head ${block.county.toLowerCase()}`}>{block.county} County</div>
+                  {block.cities.map(([town, rows]) => (
+                    <div key={town}>
+                      <div className="city-head">{town} · {rows.length}</div>
+                      {rows.map((p, i) => (
+                        <button
+                          key={`${town}-${i}`}
+                          className={`row ${scoreClass(p)} ${selected?.businessName === p.businessName ? "active" : ""}`}
+                          onClick={() => enrich(p)}
+                        >
+                          <span className={`score ${scoreClass(p)}`}>
+                            {scoreClass(p) === "prime" ? "PRIME" : scoreClass(p) === "skip" ? "SKIP" : "MAYBE"} {p.candidate?.score ?? ""}
+                          </span>
+                          <h3>{p.businessName}</h3>
+                          <p>{[p.phone, p.website].filter(Boolean).join(" · ")}</p>
+                          <p>{p.candidate?.why || p.oneLiner}</p>
+                        </button>
+                      ))}
+                    </div>
                   ))}
                 </div>
               ))}
@@ -321,10 +355,13 @@ export default function Page() {
           {dossier && !enriching && (
             <>
               <h2>{dossier.prospect.businessName}</h2>
-              <div className="sub">{dossier.prospect.candidate?.verdict} · {dossier.prospect.candidate?.why}</div>
+              <div className={`banner ${scoreClass(dossier.prospect)}`}>
+                {scoreClass(dossier.prospect) === "prime" ? "PRIME — build a demo" : scoreClass(dossier.prospect) === "skip" ? "SKIP — already has AI" : "MAYBE — thin data or mixed signals"}
+                {dossier.prospect.candidate?.why ? ` · ${dossier.prospect.candidate.why}` : ""}
+              </div>
               <div className="chips">
-                {(dossier.prospect.bookingSignals || []).map((s, i) => <span className="chip" key={`b${i}`}>{s}</span>)}
-                {(dossier.prospect.aiSignals || []).map((s, i) => <span className="chip" key={`a${i}`}>{s}</span>)}
+                {(dossier.prospect.bookingSignals || []).map((s, i) => <span className="chip book" key={`b${i}`}>{s}</span>)}
+                {(dossier.prospect.aiSignals || []).map((s, i) => <span className="chip skip" key={`a${i}`}>{s}</span>)}
               </div>
               <p className="sub">
                 {dossier.prospect.phone || "no phone"} · {dossier.prospect.address || dossier.prospect.city || ""}
