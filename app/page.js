@@ -17,6 +17,7 @@ import {
 } from "../lib/store";
 
 function scoreClass(p) {
+  if (!p || typeof p !== "object") return "maybe";
   const v = p.candidate?.verdict || (p.alreadyHasAi ? "skip" : p.candidate?.score >= 70 ? "prime" : "maybe");
   if (v === "prime" || (p.candidate?.score || 0) >= 70) return "prime";
   if (v === "skip" || p.alreadyHasAi === true) return "skip";
@@ -40,6 +41,7 @@ async function readJson(res, kind = "search") {
 }
 
 function prospectKey(p) {
+  if (!p) return "name:|";
   const site = String(p.website || "")
     .toLowerCase()
     .replace(/^https?:\/\//, "")
@@ -62,7 +64,7 @@ function mergeProspects(a, b) {
 }
 
 function countyOf(p) {
-  const c = String(p.county || "").toLowerCase();
+  const c = String(p?.county || "").toLowerCase();
   if (c.includes("joseph")) return "Josephine";
   if (c.includes("jackson")) return "Jackson";
   return "Other";
@@ -71,6 +73,7 @@ function countyOf(p) {
 function groupByCounty(list) {
   const counties = new Map();
   for (const p of list || []) {
+    if (!p?.businessName) continue;
     const co = countyOf(p);
     if (!counties.has(co)) counties.set(co, new Map());
     const cities = counties.get(co);
@@ -152,7 +155,7 @@ export default function Page() {
   const customCity = regionId === "custom";
 
   const visible = useMemo(() => {
-    const list = pack?.prospects || [];
+    const list = (pack?.prospects || []).filter((p) => p && p.businessName);
     if (cityFilter === "all") return list;
     if (cityFilter === "prime") return list.filter((p) => scoreClass(p) === "prime");
     if (cityFilter === "maybe") return list.filter((p) => scoreClass(p) === "maybe");
@@ -312,13 +315,17 @@ export default function Page() {
   async function onImport(e) {
     const file = e.target.files?.[0];
     if (!file) return;
-    importAll(await file.text());
-    const row = loadPack(packKey(nicheId, regionId, city));
-    if (row?.pack) {
-      setPack(row.pack);
-      setSavedAt(row.savedAt);
+    try {
+      importAll(await file.text());
+      const row = loadPack(packKey(nicheId, regionId, city));
+      if (row?.pack) {
+        setPack(row.pack);
+        setSavedAt(row.savedAt);
+      }
+      setLibrary(listPacks());
+    } catch (err) {
+      setError(err.message || "That file is not a Scout library.");
     }
-    setLibrary(listPacks());
     e.target.value = "";
   }
 
@@ -470,7 +477,7 @@ export default function Page() {
         <div className="card dossier">
           {!selected && <div className="empty">Click a business to pull services, hours, photos, AI verdict, business.ts, and the owner email.</div>}
           {selected && enriching && !dossier && <div className="empty">Fetching site + listings for {selected.businessName}…</div>}
-          {dossier && (
+          {dossier?.prospect && (
             <>
               <h2>{dossier.prospect.businessName}</h2>
               {enriching ? <div className="banner progress">Scraping the live site for hours and prices…</div> : null}
