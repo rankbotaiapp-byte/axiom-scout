@@ -1,40 +1,36 @@
 # Axiom Scout
 
-Operator desk for **New Era Apps**. Search a city, enrich a shop, copy `business.ts` into a clone of [axiom-business-template](https://github.com/rankbotaiapp-byte/axiom-business-template). Walk in with a live halo demo.
+Find a shop. Click it. Copy `business.ts` into a clone of [axiomHalotemplate](https://github.com/rankbotaiapp-byte/axiomHalotemplate), or use **Make shop repo**.
 
 Not a client site. Not for the shop owner.
 
-## Run (Vercel)
+## The loop
 
-1. Import this repo on Vercel.
-2. In Claude Console → **API keys** → Create key.
-3. Add that key as `ANTHROPIC_API_KEY` on the Vercel project (Production + Preview). Do not paste keys into chat.
-4. Open the Scout URL. Niche defaults to the area you live: **Jackson + Josephine County, OR** (Grants Pass, Medford, Ashland, Cave Junction, and the towns between). **Sweep all shops**.
-5. Click a shop. Wait for enrich.
-6. If verdict is **skip**, stop. They already have an AI desk.
-7. **Copy business.ts**. In a new repo from axiom-business-template, paste over `src/config/business.ts`. Drop photos into `public/business/`. Deploy that clone. That is the demo you walk in with.
+1. Open Scout (this app).
+2. Pick Barber / Tattoo / Food truck. Sweep the town.
+3. Click a shop. Skip if it already has an AI desk.
+4. **Copy business.ts** — that file is the exact paste for `src/config/business.ts` in the halo template.
+5. **Make shop repo**
+   - If a GitHub token is on this Vercel project, Scout creates a private repo from axiomHalotemplate and writes the file.
+   - If not, it copies the file and opens GitHub’s “use this template” page. You name the repo, create it, paste the file.
+6. On Vercel: Import **that new repo**. Deploy. Customer link is the shop. Owner uses `/admin` and PIN `4242`.
+
+Do not put a real client’s name into axiomHalotemplate itself.
+
+## Vercel
+
+1. Import this repo.
+2. Add `ANTHROPIC_API_KEY`.
+3. Optional, for one-click repos:
+   - `GITHUB_TOKEN` — a classic token with `repo` scope
+   - `GITHUB_OWNER=rankbotaiapp-byte`
+   - `TEMPLATE_REPO=axiomHalotemplate`
+4. On axiomHalotemplate → Settings → check **Template repository**. Without that, GitHub will not clone it as a template.
 
 ## Local
 
 ```
 cp .env.example .env.local
-# put the Anthropic key in ANTHROPIC_API_KEY
 npm install
 npm run dev
 ```
-
-## What it does
-
-- Niche + city → live web search
-- List with a 0–100 demo score and an AI flag
-- Enrich: hours, services, phone, image URLs, skip/prime verdict
-- Copy `business.ts` for the halo template
-- Copy owner email / SMS (does not send)
-
-## What it does not do
-
-- Create the GitHub client repo
-- Deploy the shop demo
-- Download photos into the repo (URLs are references)
-- Invent prices or hours — blanks stay blank
-- Guarantee the shop has no AI (evidence only)
