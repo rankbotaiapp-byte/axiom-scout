@@ -1,23 +1,33 @@
 "use client";
 
-export default function Error({ reset }) {
+function wipeScout() {
+  try {
+    const keys = [];
+    for (let i = 0; i < localStorage.length; i += 1) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith("axiom-scout")) keys.push(key);
+    }
+    keys.forEach((key) => localStorage.removeItem(key));
+    sessionStorage.clear();
+  } catch {
+    /* ignore */
+  }
+}
+
+export default function Error() {
   return (
     <main style={{ minHeight: "100dvh", display: "grid", placeItems: "center", background: "#0c0b10", color: "#eeeae3", fontFamily: "system-ui, sans-serif", padding: 24 }}>
       <div style={{ maxWidth: 420 }}>
         <p style={{ letterSpacing: "0.2em", fontSize: 12, opacity: 0.6 }}>AXIOM SCOUT</p>
         <h1 style={{ fontSize: 22, margin: "8px 0 12px" }}>This browser’s saved library broke the page.</h1>
         <p style={{ opacity: 0.75, lineHeight: 1.5 }}>
-          Your HVAC list is still in the JSON you downloaded. Reset this tab, then Import JSON. Do not sweep again unless you want a new list.
+          The list sitting in this browser is damaged. The JSON file on your computer is fine. Reset this tab, then use Import JSON. Do not sweep again unless you want a new list.
         </p>
         <button
           type="button"
           onClick={() => {
-            try {
-              localStorage.removeItem("axiom-scout:v1");
-            } catch {
-              /* ignore */
-            }
-            reset();
+            wipeScout();
+            window.location.replace("/");
           }}
           style={{
             marginTop: 18,
